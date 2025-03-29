@@ -1,0 +1,149 @@
+import os
+import json
+import datetime
+import tkinter as tk
+from tkinter import messagebox, simpledialog, ttk
+
+class ToDoList:
+    def __init__(self, filename="tasks.json"):
+        self.filename = filename
+        self.tasks = {}  # {category: [(task, priority, recurrence, due_date, completed)]}
+        self.load_tasks()
+
+    def add_task(self, category, task, priority, recurrence, due_date):
+        if not category or not task or not due_date:
+            print("Error: Category, Task, and Due Date are required!")
+            return
+
+        try:
+            datetime.datetime.strptime(due_date, "%Y-%m-%d")
+        except ValueError:
+            print("Error: Invalid date format! Use YYYY-MM-DD.")
+            return
+
+        self.tasks.setdefault(category, []).append((task, priority, recurrence, due_date, False))
+        self.sort_tasks()
+        self.save_tasks()
+
+    def edit_task(self, category, old_task, new_task, priority, recurrence, due_date):
+        if category in self.tasks:
+            for i, (t, p, r, d, c) in enumerate(self.tasks[category]):
+                if t == old_task:
+                    self.tasks[category][i] = (new_task, priority, recurrence, due_date, c)
+                    self.sort_tasks()
+                    self.save_tasks()
+                    return True
+        return False
+
+    def delete_task(self, category, task):
+        if category in self.tasks:
+            self.tasks[category] = [t for t in self.tasks[category] if t[0] != task]
+            if not self.tasks[category]:
+                del self.tasks[category]
+            self.save_tasks()
+
+    def mark_task_completed(self, category, task):
+        if category in self.tasks:
+            for i, (t, p, r, d, c) in enumerate(self.tasks[category]):
+                if t == task:
+                    self.tasks[category][i] = (t, p, r, d, True)
+                    self.save_tasks()
+                    return True
+        return False
+
+    def sort_tasks(self):
+        for category in self.tasks:
+            self.tasks[category].sort(
+                key=lambda x: (datetime.datetime.strptime(x[3], "%Y-%m-%d"), ["High", "Medium", "Low"].index(x[1]))
+            )
+
+    def save_tasks(self):
+        try:
+            with open(self.filename, "w") as file:
+                json.dump(self.tasks, file, indent=4)
+        except IOError:
+            print("Error: Failed to save tasks!")
+
+    def load_tasks(self):
+        if os.path.exists(self.filename):
+            try:
+                with open(self.filename, "r") as file:
+                    self.tasks = json.load(file)
+                    for category in self.tasks:
+                        self.tasks[category] = [tuple(task) for task in self.tasks[category]]
+            except (IOError, json.JSONDecodeError):
+                print("Error: Failed to load tasks!")
+                self.tasks = {}
+
+class ToDoApp:
+    def __init__(self, root):
+        self.todo = ToDoList()
+        self.root = root
+        self.root.title("✅ To-Do List")
+        self.root.geometry("500x500")
+
+        self.task_listbox = tk.Listbox(root, width=50, height=15, font=("Arial", 12))
+        self.task_listbox.pack(pady=10)
+
+        self.button_frame = tk.Frame(root)
+        self.button_frame.pack()
+
+        ttk.Button(self.button_frame, text="➕ Add Task", command=self.add_task).grid(row=0, column=0, padx=5)
+        ttk.Button(self.button_frame, text="✏️ Edit", command=self.edit_task).grid(row=0, column=1, padx=5)
+        ttk.Button(self.button_frame, text="✅ Mark Done", command=self.mark_task_done).grid(row=0, column=2, padx=5)
+        ttk.Button(self.button_frame, text="❌ Delete", command=self.delete_task).grid(row=0, column=3, padx=5)
+
+        self.show_tasks()
+
+    def show_tasks(self):
+        self.task_listbox.delete(0, tk.END)
+        for category, tasks in self.todo.tasks.items():
+            self.task_listbox.insert(tk.END, f"📌 {category}:")
+            for task, priority, recurrence, due_date, completed in tasks:
+                text = f"{task} (Due: {due_date}, {priority}) {'✅' if completed else ''}"
+                self.task_listbox.insert(tk.END, f"   ➜ {text}")
+
+    def add_task(self):
+        category = simpledialog.askstring("Category", "Enter task category:")
+        task = simpledialog.askstring("Task", "Enter task description:")
+        due_date = simpledialog.askstring("Due Date", "Enter due date (YYYY-MM-DD):")
+        if category and task and due_date:
+            self.todo.add_task(category, task, "Medium", "None", due_date)
+            self.show_tasks()
+
+    def mark_task_done(self):
+        selected = self.task_listbox.get(tk.ACTIVE)
+        if selected and "📌" not in selected:
+            task_name = selected.split(" (")[0].strip("   ➜")
+            for cat, tasks in self.todo.tasks.items():
+                if any(t[0] == task_name for t in tasks):
+                    if self.todo.mark_task_completed(cat, task_name):
+                        self.show_tasks()
+                        return
+
+    def delete_task(self):
+        selected = self.task_listbox.get(tk.ACTIVE)
+        if selected and "📌" not in selected:
+            task_name = selected.split(" (")[0].strip("   ➜")
+            for cat, tasks in self.todo.tasks.items():
+                if any(t[0] == task_name for t in tasks):
+                    self.todo.delete_task(cat, task_name)
+                    self.show_tasks()
+                    return
+    
+    def edit_task(self):
+        selected = self.task_listbox.get(tk.ACTIVE)
+        if selected and "📌" not in selected:
+            task_name = selected.split(" (")[0].strip("   ➜")
+            category = next((cat for cat, tasks in self.todo.tasks.items() if any(t[0] == task_name for t in tasks)), None)
+            if not category:
+                return
+            new_task = simpledialog.askstring("Edit Task", "Enter new task name:", initialvalue=task_name)
+            if new_task:
+                self.todo.edit_task(category, task_name, new_task, "Medium", "None", "2024-12-31")
+                self.show_tasks()
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = ToDoApp(root)
+    root.mainloop()
